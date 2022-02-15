@@ -60,81 +60,6 @@ namespace Nox.Libs.Data.Babaj
             this.Key = Key;
     }
 
-    public class DataRowAttributesCollector
-    {
-        public readonly MemberInfo memberInfo;
-
-        public DataRowAttributesCollector(MemberInfo memberInfo) =>
-            this.memberInfo = memberInfo;
-    }
-
-
-    public class PropertyAttributes
-    {
-        #region Properties
-        public string Name { get => Property.Name; }
-
-        public PropertyInfo Property { get; set; }
-
-        public bool IsPrimaryKeyColumn { get; set; } = false;
-
-        public bool IsRequired { get; set; } = false;
-
-//        public ColumnCastDescriptor CastDescriptor { get; set; }
-
-        public List<ColumnAttribute> Attributes { get; } = new List<ColumnAttribute>(); 
-        #endregion
-
-        public PropertyAttributes(PropertyInfo Property) 
-            : base() => this.Property = Property;
-        public PropertyAttributes(PropertyInfo Property, List<ColumnAttribute> Attributes)
-            : this(Property) => this.Attributes.AddRange(Attributes);
-    }
-
-    //public class ClassAttributeCollector<T> : List<T>, IEnumerable
-    //{
-    //    #region Properties
-    //    public MemberInfo Member { get; }
-    //    #endregion
-
-    //    public ClassAttributeCollector(MemberInfo Member)
-    //        : base() => this.Member = Member;
-    //}
-
-    public class PropertyAttributeCollector : List<PropertyAttributes>, IEnumerable
-    {
-        #region Properties
-        public MemberInfo Member { get; }
-        #endregion
-
-        public PropertyAttributeCollector(MemberInfo Member)
-            : base() => this.Member = Member;
-    }
-
-    //public class AttributesCollector
-    //{
-    //    #region Properties
-    //    public string Name { 
-    //        get => Member.Name; }
-
-    //    public MemberInfo Member { get; }
-
-    //    public List<TableAttribute> TableAttributes { get; } = new List<TableAttribute>();
-
-    //    public List<PropertyAttributes> PropertyAttributes { get; } = new List<PropertyAttributes>();
-
-    //    #endregion
-
-    //    public AttributesCollector(MemberInfo Member)
-    //        : base() => this.Member = Member;
-    //    public AttributesCollector(MemberInfo Member, List<TableAttribute> TableAttributes, List<PropertyAttributes> PropertyAttributes)
-    //        : this(Member) 
-    //    { 
-    //        this.TableAttributes.AddRange(TableAttributes);
-    //        this.PropertyAttributes.AddRange(PropertyAttributes);
-    //    }
-    //}
-
     [Flags]
     public enum PropertyUsageEnum
     {
@@ -250,10 +175,4 @@ namespace Nox.Libs.Data.Babaj
             CastDescriptor = ColumnCastDescriptor.From(Property);
         }
     }
-
-    //public class PrimaryKeyDescriptor : ColumnMappingDescriptor
-    //{
-    //    public PrimaryKeyDescriptor(PropertyInfo Property)
-    //        : base(Property) { }
-    //}
 }

@@ -21,23 +21,29 @@ namespace Nox.Libs.Data.Babaj
 {
     public abstract class DataTable : DataObjectBase
     {
-        public string _DatabaseTableSource;
+        private TableDescriptor _TableDescriptor;
 
+        public string _DatabaseTableSource;
         public string _DatabasePrimaryKeyField;
 
         #region Properties
         public string Name { get; }
 
-        public string TableSource { get; protected set; }
-        public string PrimeryKeyField { get; protected set; }
+        public TableDescriptor tableDescriptor { get => _TableDescriptor; }
+
+        public string TableSource { get => _DatabaseTableSource; }
+        public string PrimeryKeyField { get => _DatabasePrimaryKeyField; }
+
         #endregion
         public DataTable(DataModel dataModel) :
             base(dataModel)
         {
-            // assume attribute exists ... 
-            //var PrimaryKeyColAttributes = dataModel.GetPropertyTypeAttributes<DbPrimaryKeyAttribute>(GetType()).First();
-            //DatabaseTableSource = dataModel.GetClassTypeAttributes<DbTableAttribute>(GetType()).First().TableSource;
-            //DatabasePrimaryKeyField = dataModel.GetPropertyTypeAttributes<PrimaryKeyAttribute>(GetType()).First();
+            var self = GetType();
+            string Key = $"{self.Namespace}.{self.Name}";
+
+            _TableDescriptor = dataModel.GetTableDescriptor(Key);
+            _DatabaseTableSource = _TableDescriptor.TableSource;
+            _DatabasePrimaryKeyField = _TableDescriptor.Where(f => f.IsPrimaryKey).FirstOrDefault()?.Source;
         }
     }
 
@@ -112,7 +118,6 @@ namespace Nox.Libs.Data.Babaj
             }
         }
 
-
         /// <summary>
         /// create a new row an attach it to this datatable
         /// </summary>
@@ -127,12 +132,7 @@ namespace Nox.Libs.Data.Babaj
         }
 
         public DataTable(DataModel dataModel) :
-            base(dataModel)
-        {
-            //this.PrimeryKeyField = Collector.PropertyAttributes.Find(f => f.IsPrimaryKeyColumn)?.Name;
-            //this.TableSource = Collector.TableAttributes.FirstOrDefault()?.TableSource;
-
-            _Operate = new Operate<T>(dataModel, (DataTable)this);
-        }
+            base(dataModel) =>
+            _Operate = new Operate<T>(dataModel, this);
     }
 }

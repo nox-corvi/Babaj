@@ -255,26 +255,27 @@ namespace Nox.Libs.Data.Babaj
 
         protected readonly DataTable dataTable;
 
-        private ColumnMappingDescriptor[] _MappingDescriptors;
+        //private ColumnMappingDescriptor[] _MappingDescriptors;
         private DatabaseRelationDescriptor[] _RelationDescriptors;
 
-        private PrimaryKeyDescriptor _PrimaryKeyMappingAttribute;
+        private TableDescriptor _TableDescriptor;
+        private PropertyDescriptor _PrimaryKeyPropertyDescriptor;
 
         #region Properties
         public string TableSource =>
             dataTable.TableSource;
 
         public string DatabasePrimaryKey =>
-            "";// dataTable.DatabasePrimaryKeyField;
+            _PrimaryKeyPropertyDescriptor.Source;
 
-        public ColumnMappingDescriptor[] MappingDescriptors =>
-            _MappingDescriptors;
+        //public ColumnMappingDescriptor[] MappingDescriptors =>
+        //    _MappingDescriptors;
 
         public DatabaseRelationDescriptor[] DatabaseRelationDescriptor =>
             _RelationDescriptors;
 
-        public PrimaryKeyDescriptor PrimaryKeyMappingAttribute =>
-            _PrimaryKeyMappingAttribute;
+        public PropertyDescriptor PrimaryKeyPropertyDescriptor =>
+            _PrimaryKeyPropertyDescriptor;
         #endregion
 
         #region Stmt
@@ -285,7 +286,7 @@ namespace Nox.Libs.Data.Babaj
             $"SELECT * FROM {TableSource} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
 
         private string CreateExistsSelect(string SubSelect) =>
-            $"SELECT CASE WHEN EXISTS ({SubSelect} THEN 1 ELSE 0 END";
+            $"SELECT CASE WHEN EXISTS ({SubSelect}) THEN 1 ELSE 0 END";
 
         private string CreateSelectStmt(string Where) =>
            $"SELECT * FROM {TableSource} WHERE {Where}";
@@ -328,7 +329,7 @@ namespace Nox.Libs.Data.Babaj
 
         #region Database Operations
         public bool Exists(string SQL, CommandType commandType = CommandType.Text, params SqlParameter[] Parameters) =>
-            GetValue<bool>(CreateExistsSelect(SQL));
+            GetValue<bool>(CreateExistsSelect(SQL), commandType, Parameters);
 
         public bool Exists(string SQL, params SqlParameter[] Parameters) =>
             Exists(SQL, CommandType.Text, Parameters);
@@ -339,11 +340,11 @@ namespace Nox.Libs.Data.Babaj
         #endregion
 
         private Guid IdPropertyValue(T row) =>
-            row.GetPropertyValue<Guid>(_PrimaryKeyMappingAttribute.Property);
+            row.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
 
         public void Insert(T row)
         {
-            var KeyFieldValue = row.GetPropertyValue<Guid>(_PrimaryKeyMappingAttribute.Property);
+            var KeyFieldValue = row.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
 
             if (!Exists(CreateKeySelect, new SqlParameter($"@{DatabasePrimaryKey}", KeyFieldValue)))
             {
@@ -351,14 +352,19 @@ namespace Nox.Libs.Data.Babaj
                 var Params = new List<SqlParameter>();
 
                 // add key
-                Fields.Add(_PrimaryKeyMappingAttribute.Name);
-                Params.Add(new SqlParameter($"@{_PrimaryKeyMappingAttribute.Name}", KeyFieldValue));
+                Fields.Add(_PrimaryKeyPropertyDescriptor.Name);
+                Params.Add(new SqlParameter($"@{_PrimaryKeyPropertyDescriptor.Source}", KeyFieldValue));
 
                 // add data
-                for (int i = 0; i < _MappingDescriptors.Count(); i++)
+                for (int i = 0; i < _TableDescriptor.Count(); i++)
                 {
-                    Fields.Add(_MappingDescriptors[i].Name);
-                    Params.Add(new SqlParameter($"@{_MappingDescriptors[i].Name}", row.GetPropertyValue(_MappingDescriptors[i].Property)));
+                    var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
+
+                    if (!_TableDescriptor[i].IsPrimaryKey)
+                    {
+                        Fields.Add(MappingDescriptor.Name);
+                        Params.Add(new SqlParameter($"@{MappingDescriptor.Name}", row.GetPropertyValue(MappingDescriptor.Property)));
+                    }
                 }
 
                 // and go ... 
@@ -371,7 +377,7 @@ namespace Nox.Libs.Data.Babaj
         public void Update(T r)
         {
             // get primary key of row ...
-            var KeyFieldValue = r.GetPropertyValue<Guid>(_PrimaryKeyMappingAttribute.Property);
+            var KeyFieldValue = r.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
 
             // test is row exists ... 
             if (Exists(CreateKeySelect, new SqlParameter($"@{DatabasePrimaryKey}", KeyFieldValue)))
@@ -379,14 +385,19 @@ namespace Nox.Libs.Data.Babaj
                 var Fields = new List<string>();
                 var Params = new List<SqlParameter>();
 
-                for (int i = 0; i < _MappingDescriptors.Count(); i++)
+                for (int i = 0; i < _TableDescriptor.Count(); i++)
                 {
-                    Fields.Add(_MappingDescriptors[i].Name);
-                    Params.Add(new SqlParameter($"@{_MappingDescriptors[i].Name}", r.GetPropertyValue(_MappingDescriptors[i].Property)));
+                    var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
+
+                    if (!_TableDescriptor[i].IsPrimaryKey)
+                    {
+                        Fields.Add(MappingDescriptor.Name);
+                        Params.Add(new SqlParameter($"@{MappingDescriptor.Name}", r.GetPropertyValue(MappingDescriptor.Property)));
+                    }
                 }
 
                 // add parameter used in where-condition ... 
-                Params.Add(new SqlParameter($"@{_PrimaryKeyMappingAttribute.Name}", KeyFieldValue));
+                Params.Add(new SqlParameter($"@{_PrimaryKeyPropertyDescriptor.Name}", KeyFieldValue));
 
                 // and go ... 
                 Execute(CreateUpdateStmt(Fields), Params.ToArray());
@@ -397,9 +408,9 @@ namespace Nox.Libs.Data.Babaj
 
         public void Delete(DataRow r)
         {
-            var KeyFieldValue = r.GetPropertyValue<Guid>(_PrimaryKeyMappingAttribute.Property);
+            var KeyFieldValue = r.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
 
-            Execute(CreateDeleteStmt, new SqlParameter($"@{_PrimaryKeyMappingAttribute.Name}", KeyFieldValue));
+            Execute(CreateDeleteStmt, new SqlParameter($"@{_PrimaryKeyPropertyDescriptor.Name}", KeyFieldValue));
         }
 
         public void Schema()
@@ -420,18 +431,23 @@ namespace Nox.Libs.Data.Babaj
                     NewRow.dataTable = dataTable;
 
                     // add primary key ..
-                    _PrimaryKeyMappingAttribute.Property.SetValue(NewRow, (r.GetValue(r.GetOrdinal(_PrimaryKeyMappingAttribute.Name))));
+                    _PrimaryKeyPropertyDescriptor.Property.SetValue(NewRow, (r.GetValue(r.GetOrdinal(_PrimaryKeyPropertyDescriptor.Name))));
 
                     // add data ... 
-                    foreach (var a in _MappingDescriptors)
+                    for (int i = 0; i < _TableDescriptor.Count; i++)
                     {
-                        var data = r.GetValue(r.GetOrdinal(a.Name));
+                        var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
 
-                        // Test if DBNull, use null instead ...
-                        if (!Convert.IsDBNull(data))
-                            a.Property.SetValue(NewRow, data);
-                        else
-                            a.Property.SetValue(NewRow, null);
+                        if (!_TableDescriptor[i].IsPrimaryKey)
+                        {
+                            var data = r.GetValue(r.GetOrdinal(MappingDescriptor.Name));
+
+                            // Test if DBNull, use null instead ...
+                            if (!Convert.IsDBNull(data))
+                                MappingDescriptor.Property.SetValue(NewRow, data);
+                            else
+                                MappingDescriptor.Property.SetValue(NewRow, null);
+                        }
                     }
 
                     NewRow.AcceptChanges();
@@ -442,48 +458,53 @@ namespace Nox.Libs.Data.Babaj
             return Result;
         }
 
-        private void BuildAttributes()
-        {
-            var TypeAttributes = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        //private void BuildAttributes()
+        //{
+        //    var TypeAttributes = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-            var MappingDescriptors = new List<ColumnMappingDescriptor>();
-            var RelationDescriptors = new List<DatabaseRelationDescriptor>();
-            foreach (var item in TypeAttributes)
+        //    var MappingDescriptors = new List<ColumnMappingDescriptor>();
+        //    var RelationDescriptors = new List<DatabaseRelationDescriptor>();
+        //    foreach (var item in TypeAttributes)
 
-            {
-                // Check if Property has a PrimaryKeyAttribute
-                var DatabaseColumnAttribute = item.GetCustomAttribute<ColumnAttribute>();
-                if (DatabaseColumnAttribute != null)
-                {
-                    if (DatabaseColumnAttribute.Source.Equals(DatabasePrimaryKey, StringComparison.InvariantCultureIgnoreCase))
-                        this._PrimaryKeyMappingAttribute = new PrimaryKeyDescriptor(item);
-                    else
-                    {
-                        var MappingDescriptor = new ColumnMappingDescriptor(item);
+        //    {
+        //        // Check if Property has a PrimaryKeyAttribute
+        //        var DatabaseColumnAttribute = item.GetCustomAttribute<ColumnAttribute>();
+        //        if (DatabaseColumnAttribute != null)
+        //        {
+        //            if (DatabaseColumnAttribute.Source.Equals(DatabasePrimaryKey, StringComparison.InvariantCultureIgnoreCase))
+        //                this._PrimaryKeyPropertyDescriptor = new PrimaryKeyDescriptor(item);
+        //            else
+        //            {
+        //                var MappingDescriptor = new ColumnMappingDescriptor(item);
 
-                        MappingDescriptors.Add(MappingDescriptor);
-                    }
-                }
+        //                MappingDescriptors.Add(MappingDescriptor);
+        //            }
+        //        }
 
-                var RelationAttribute = item.GetCustomAttribute<RelationAttribute>();
-                if (RelationAttribute != null)
-                {
-                    var RelationDescriptor = new DatabaseRelationDescriptor(item)
-                    {
-                        RelatedDataModel = RelationAttribute.RelatedDataModel,
-                        ForeignKey = new ColumnMappingDescriptor(item)
-                        {
-                            CastDescriptor = ColumnCastDescriptor.From(item)
-                        }
-                    };
-                }
-            }
+        //        var RelationAttribute = item.GetCustomAttribute<RelationAttribute>();
+        //        if (RelationAttribute != null)
+        //        {
+        //            var RelationDescriptor = new DatabaseRelationDescriptor(item)
+        //            {
+        //                RelatedDataModel = RelationAttribute.RelatedDataModel,
+        //                ForeignKey = new ColumnMappingDescriptor(item)
+        //                {
+        //                    CastDescriptor = ColumnCastDescriptor.From(item)
+        //                }
+        //            };
+        //        }
+        //    }
 
-            this._MappingDescriptors = MappingDescriptors.ToArray();
-        }
+        //    this._MappingDescriptors = MappingDescriptors.ToArray();
+        //}
 
         public Operate(DataModel dataModel, DataTable dataTable) :
-            base(dataModel) =>
+            base(dataModel)
+        {
             this.dataTable = dataTable;
+
+            _TableDescriptor = dataTable.tableDescriptor;
+            _PrimaryKeyPropertyDescriptor = _TableDescriptor.Where(f => f.IsPrimaryKey).FirstOrDefault();
+        }
     }
 }

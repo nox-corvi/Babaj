@@ -9,4 +9,13 @@
     <OutputPath>C:\Users\gottung\Desktop\Babaj\Build\</OutputPath>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Toolkit.Mvvm" Version="7.1.2" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Nox.Libs\Nox.Libs\Nox.Libs.csproj" />
+  </ItemGroup>
+
 </Project>

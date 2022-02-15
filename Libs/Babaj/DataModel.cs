@@ -1,10 +1,10 @@
-﻿using Nox.Libs;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Nox.Libs;
 
 namespace Nox.Libs.Data.Babaj
 {
@@ -12,9 +12,8 @@ namespace Nox.Libs.Data.Babaj
     {
         public readonly string ConnectionString;
 
-        private Cache<Attribute> Attributes = new Cache<Attribute>();
-        private Cache<ColumnCastDescriptor> CastDescriptor = new Cache<ColumnCastDescriptor>();
-
+        private Cache<TableDescriptor> TableDesciptors = new Cache<TableDescriptor>();
+        
         #region Properties
         public virtual bool AutoValidateOnStartup => false;
         #endregion
@@ -113,40 +112,68 @@ namespace Nox.Libs.Data.Babaj
         //}
         #endregion
 
-        private void GetDataClasses()
+        private void CacheAttributes(Type ClassType)
         {
-            var DataTypes = new List<Type>();
-
             var assembly = GetType().Assembly;
+            var self = assembly.GetTypes().Where(f => this.GetType().IsSubclassOf(typeof(DataModel))).FirstOrDefault();
+
+            // babaj needs an implementation of the datamodel class
+            if (self == null)
+                throw new Exception("datamodel not implemented");
+
+            // check if namespace of types is subordinated to datamodel
             foreach (var item in assembly.GetTypes())
                 if (item.BaseType.IsGenericType && item.BaseType.GetGenericTypeDefinition() == typeof(DataTable<>))
-                    CacheAttributes(item);
-        }
-        public void CacheAttributes(Type ClassType)
-        {
-            string root = ClassType.Name;
+                    if (item.Namespace.IsLike(self.Namespace))
+                    {
+                        string Key = $"{item.Namespace}.{item.Name}";
+                        if (!TableDesciptors.CacheValueExists(Key))
+                        {
+                            var TableDescriptorItem = new TableDescriptor(item.Name);
 
-            // store items in <Class>.<Attribute>#<Type>
-            foreach (var item in ClassType.GetCustomAttributes())
-                Attributes.SetCacheValue($"{root}#{item.GetType().Name}", () => item);
+                            TableDescriptorItem.TableSource = item.GetCustomAttribute<TableAttribute>()?.TableSource ?? "";
 
-            if (ClassType.BaseType.IsGenericType && ClassType.BaseType.GetGenericTypeDefinition() == typeof(DataTable<>))
-            {
-                var RowType = ClassType.BaseType.GetGenericArguments().FirstOrDefault();
-                if (RowType != null)
-                    foreach (var item in RowType.GetProperties())
-                        foreach (var attribute in item.GetCustomAttributes())
-                            Attributes.SetCacheValue($"{root}.{item.Name}#{attribute.GetType().Name}", () => attribute);
-            }
+                            var RowType = item.BaseType.GetGenericArguments().FirstOrDefault();
+                            if (RowType != null)
+                                foreach (var property in RowType.GetProperties())
+                                {
+                                    var PropertyDescriptorItem = new PropertyDescriptor(property);
+
+                                    foreach (var attribute in property.GetCustomAttributes())
+                                    {
+                                        // check primarykey status
+                                        if (typeof(PrimaryKeyAttribute).IsAssignableFrom(attribute.GetType()))
+                                            PropertyDescriptorItem.IsPrimaryKey = true;
+
+                                        // check if required
+                                        if (typeof(Required).IsAssignableFrom(attribute.GetType()))
+                                            PropertyDescriptorItem.IsRequired = true;
+
+                                        // get table source field
+                                        if (typeof(ColumnAttribute).IsAssignableFrom(attribute.GetType()))
+                                        {
+                                            PropertyDescriptorItem.Source = (attribute as ColumnAttribute).Source;
+                                            PropertyDescriptorItem.MappingDescriptor = new ColumnMappingDescriptor(property);
+
+                                            TableDescriptorItem.Add(PropertyDescriptorItem);
+                                        }
+                                    }
+                                }
+
+                            TableDesciptors.SetCacheValue(Key, () => TableDescriptorItem);
+                        }
+                    }
         }
+
+        public TableDescriptor GetTableDescriptor(string Key) =>
+            TableDesciptors.GetCacheValue(Key);
 
         public T CreateInstance<T>(Type type) where T : DataObjectBase
                 => (T)Activator.CreateInstance(type, this);
 
         public DataModel(string ConnectionString)
         {
-            GetDataClasses();
-            
+            CacheAttributes(this.GetType());
             this.ConnectionString = ConnectionString;
         }
 
@@ -158,7 +185,7 @@ namespace Nox.Libs.Data.Babaj
             if (!disposedValue)
             {
                 if (disposing)
-                    Attributes.Dispose();
+                    TableDesciptors.Dispose();
 
                 disposedValue = true;
             }

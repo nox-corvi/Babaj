@@ -19,6 +19,47 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Nox.Libs.Data.Babaj
 {
+    public class PropertyDescriptor
+    {
+        private bool _IsRequired = default;
+        private bool _IsPrimaryKey = default; 
+
+        #region Properties
+        public PropertyInfo Property { get; }
+
+        public string Name { get => Property.Name; }
+
+
+        public string Source { get; set; }
+
+        public ColumnMappingDescriptor MappingDescriptor { get; set; }
+
+        // ----
+        public bool IsRequired { get => _IsRequired | _IsPrimaryKey; set => _IsRequired = value; }
+        public bool IsPrimaryKey { get => _IsPrimaryKey; set => _IsPrimaryKey = value; }
+        #endregion
+
+        public override string ToString() =>
+                $"{Name}#{Property.PropertyType.Name}";
+
+        public PropertyDescriptor(PropertyInfo Property) =>
+            this.Property = Property;
+    }
+
+    public class TableDescriptor :  List<PropertyDescriptor>
+    {
+        #region Property
+        public string Key { get; }
+        
+        public string TableSource { get; set; }
+        #endregion
+
+
+
+        public TableDescriptor(string Key) =>
+            this.Key = Key;
+    }
+
     public class DataRowAttributesCollector
     {
         public readonly MemberInfo memberInfo;
@@ -69,7 +110,6 @@ namespace Nox.Libs.Data.Babaj
         public PropertyAttributeCollector(MemberInfo Member)
             : base() => this.Member = Member;
     }
-
 
     //public class AttributesCollector
     //{
@@ -211,9 +251,9 @@ namespace Nox.Libs.Data.Babaj
         }
     }
 
-    public class PrimaryKeyDescriptor : ColumnMappingDescriptor
-    {
-        public PrimaryKeyDescriptor(PropertyInfo Property)
-            : base(Property) { }
-    }
+    //public class PrimaryKeyDescriptor : ColumnMappingDescriptor
+    //{
+    //    public PrimaryKeyDescriptor(PropertyInfo Property)
+    //        : base(Property) { }
+    //}
 }

@@ -16,7 +16,7 @@ using System.Runtime.CompilerServices;
 using System.ComponentModel.Design.Serialization;
 using Nox.Libs;
 using System.ComponentModel.DataAnnotations;
-using Microsoft.VisualStudio.PlatformUI;
+using Microsoft.Toolkit.Mvvm.ComponentModel;
 
 namespace Nox.Libs.Data.Babaj
 {

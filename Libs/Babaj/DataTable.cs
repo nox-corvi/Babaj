@@ -21,20 +21,16 @@ namespace Nox.Libs.Data.Babaj
 {
     public abstract class DataTable : DataObjectBase
     {
-        private TableDescriptor _TableDescriptor;
+        protected TableDescriptor _TableDescriptor;
 
-        public string _DatabaseTableSource;
-        public string _DatabasePrimaryKeyField;
+        protected string _DatabaseTableSource;
+        protected string _DatabasePrimaryKeyField;
 
         #region Properties
-        public string Name { get; }
-
-        public TableDescriptor tableDescriptor { get => _TableDescriptor; }
-
         public string TableSource { get => _DatabaseTableSource; }
         public string PrimeryKeyField { get => _DatabasePrimaryKeyField; }
-
         #endregion
+
         public DataTable(DataModel dataModel) :
             base(dataModel)
         {
@@ -42,6 +38,7 @@ namespace Nox.Libs.Data.Babaj
             string Key = $"{self.Namespace}.{self.Name}";
 
             _TableDescriptor = dataModel.GetTableDescriptor(Key);
+            
             _DatabaseTableSource = _TableDescriptor.TableSource;
             _DatabasePrimaryKeyField = _TableDescriptor.Where(f => f.IsPrimaryKey).FirstOrDefault()?.Source;
         }
@@ -54,12 +51,8 @@ namespace Nox.Libs.Data.Babaj
         #region Properties
         #endregion
 
-        public DataRowColl<T> Get(string Where, params KeyValuePair<string, string>[] Parameters)
-        {
-            var Result = _Operate.Load(Where, Parameters.Select(f => new SqlParameter(f.Key, f.Value)).ToArray());
-
-            return Result;
-        }
+        public DataRowColl<T> Get(string Where, params KeyValuePair<string, string>[] Parameters) =>
+            _Operate.Load(Where, Parameters.Select(f => new SqlParameter(f.Key, f.Value)).ToArray());
 
         public T GetWhereId(Guid Id) => Get("id = @id",
             new KeyValuePair<string, string>("id", Id.ToString())).FirstOrDefault();

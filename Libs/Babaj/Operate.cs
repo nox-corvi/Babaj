@@ -76,7 +76,6 @@ namespace Nox.Libs.Data.Babaj
         protected void CloseDatabaseConnection()
         {
             if (_DatabaseConnection != null)
-
                 switch (_DatabaseConnection.State)
                 {
                     case ConnectionState.Broken:
@@ -128,13 +127,9 @@ namespace Nox.Libs.Data.Babaj
         /// </summary>
         public void Commit()
         {
-            if (_Transaction != null)
-            {
-                _Transaction.Commit();
-                _Transaction = null;
-            }
+            _Transaction?.Commit();
+            _Transaction = null;
         }
-
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2100:SQL-Abfragen auf Sicherheitsrisiken überprüfen")]
         public SqlDataReader GetReader(string SQL, CommandType commandType = CommandType.Text, params SqlParameter[] Parameters)
@@ -143,16 +138,17 @@ namespace Nox.Libs.Data.Babaj
 
             SqlCommand CMD = new SqlCommand(SQL, _DatabaseConnection)
             {
+                CommandType = commandType,
                 CommandTimeout = _SqlCommandTimeout,
-                Transaction = _Transaction,
-                CommandType = commandType
+
+                Transaction = _Transaction
             };
 
             OpenDatabaseConnection();
 
             if (Parameters != null)
                 foreach (SqlParameter Param in Parameters)
-                    CMD.Parameters.AddWithValue(Param.ParameterName, Param.Value);
+                    CMD.Parameters.Add(Param);
 
             return CMD.ExecuteReader(CommandBehavior.CloseConnection);
         }
@@ -163,15 +159,15 @@ namespace Nox.Libs.Data.Babaj
         public SqlDataReader GetReader(string SQL) =>
             GetReader(SQL, CommandType.Text, null);
 
-
         public long Execute(string SQL, CommandType commandType = CommandType.Text, params SqlParameter[] Parameters)
         {
             EnsureConnectionEstablished();
 
             using (SqlCommand CMD = new SqlCommand(SQL, _DatabaseConnection)
             {
-                CommandTimeout = _SqlCommandTimeout,
                 CommandType = commandType,
+                CommandTimeout = _SqlCommandTimeout,
+
                 Transaction = _Transaction
             })
             {
@@ -179,7 +175,7 @@ namespace Nox.Libs.Data.Babaj
 
                 if (Parameters != null)
                     foreach (SqlParameter Param in Parameters)
-                        CMD.Parameters.AddWithValue(Param.ParameterName, Param.Value);
+                        CMD.Parameters.Add(Param);
 
                 var Result = CMD.ExecuteNonQuery();
                 return Result;
@@ -223,6 +219,7 @@ namespace Nox.Libs.Data.Babaj
         public Operate(DataModel dataModel)
             : base(dataModel)
         {
+
         }
 
         #region IDisposable Support
@@ -255,15 +252,18 @@ namespace Nox.Libs.Data.Babaj
 
         protected readonly DataTable dataTable;
 
-        //private ColumnMappingDescriptor[] _MappingDescriptors;
-        private DatabaseRelationDescriptor[] _RelationDescriptors;
-
-        private TableDescriptor _TableDescriptor;
+        protected TableDescriptor _TableDescriptor;
         private PropertyDescriptor _PrimaryKeyPropertyDescriptor;
 
+        protected string _DatabaseTableSource;
+        protected string _DatabasePrimaryKeyField;
+
+
+        private DatabaseRelationDescriptor[] _RelationDescriptors;
+
         #region Properties
-        public string TableSource =>
-            dataTable.TableSource;
+        //public string TableSource =>
+        //    dataTable.TableSource;
 
         public string DatabasePrimaryKey =>
             _PrimaryKeyPropertyDescriptor.Source;
@@ -271,25 +271,22 @@ namespace Nox.Libs.Data.Babaj
         //public ColumnMappingDescriptor[] MappingDescriptors =>
         //    _MappingDescriptors;
 
-        public DatabaseRelationDescriptor[] DatabaseRelationDescriptor =>
-            _RelationDescriptors;
-
         public PropertyDescriptor PrimaryKeyPropertyDescriptor =>
             _PrimaryKeyPropertyDescriptor;
         #endregion
 
         #region Stmt
         private string CreateSchemaSelect =>
-            $"SELECT TOP 0 * FROM {TableSource}";
+            $"SELECT TOP 0 * FROM {_DatabaseTableSource}";
 
         private string CreateKeySelect =>
-            $"SELECT * FROM {TableSource} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
+            $"SELECT * FROM {_DatabaseTableSource} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
 
         private string CreateExistsSelect(string SubSelect) =>
             $"SELECT CASE WHEN EXISTS ({SubSelect}) THEN 1 ELSE 0 END";
 
         private string CreateSelectStmt(string Where) =>
-           $"SELECT * FROM {TableSource} WHERE {Where}";
+           $"SELECT * FROM {dataTable.TableSource} WHERE {Where}";
 
         private string CreateSelectStmt(string Where, List<string> FieldList)
         {
@@ -298,7 +295,7 @@ namespace Nox.Libs.Data.Babaj
             for (int i = 0; i < FieldList.Count; i++)
                 Fields.Append(i > 0 ? ", " : "").Append(FieldList[i]);
 
-            return $"SELECT {Fields.ToString()} FROM {TableSource} WHERE ";
+            return $"SELECT {Fields.ToString()} FROM {_DatabaseTableSource} WHERE ";
         }
 
         private string CreateInsertStmt(List<string> FieldList)
@@ -311,7 +308,7 @@ namespace Nox.Libs.Data.Babaj
                 Values.Append(i > 0 ? ", " : "").Append("@" + FieldList[i]);
             }
 
-            return $"INSERT INTO {TableSource}({Fields.ToString()}) VALUES({Values.ToString()})";
+            return $"INSERT INTO {_DatabaseTableSource}({Fields.ToString()}) VALUES({Values.ToString()})";
         }
 
         private string CreateUpdateStmt(List<string> FieldList)
@@ -321,10 +318,10 @@ namespace Nox.Libs.Data.Babaj
             for (int i = 0; i < FieldList.Count; i++)
                 FieldValuePair.Append(i > 0 ? ", " : "").Append(FieldList[i] + " = @" + FieldList[i]);
 
-            return $"UPDATE {TableSource} SET {FieldValuePair.ToString()} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
+            return $"UPDATE {_DatabaseTableSource} SET {FieldValuePair.ToString()} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
         }
         private string CreateDeleteStmt =>
-            $"DELETE FROM {TableSource} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
+            $"DELETE FROM {_DatabaseTableSource} WHERE {DatabasePrimaryKey} = @{DatabasePrimaryKey}";
         #endregion
 
         #region Database Operations
@@ -356,15 +353,19 @@ namespace Nox.Libs.Data.Babaj
                 Params.Add(new SqlParameter($"@{_PrimaryKeyPropertyDescriptor.Source}", KeyFieldValue));
 
                 // add data
-                for (int i = 0; i < _TableDescriptor.Count(); i++)
+                foreach (var md in _TableDescriptor.Where(f => !f.IsPrimaryKey).Select(f => f.MappingDescriptor))
                 {
-                    var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
+                    Fields.Add(md.Name);
 
-                    if (!_TableDescriptor[i].IsPrimaryKey)
-                    {
-                        Fields.Add(MappingDescriptor.Name);
-                        Params.Add(new SqlParameter($"@{MappingDescriptor.Name}", row.GetPropertyValue(MappingDescriptor.Property)));
-                    }
+                    var sqlParam = new SqlParameter($"@{md.Name}", md.CastDescriptor.TargetType);
+
+                    var value = row.GetPropertyValue(md.Property);
+                    if (value == null)
+                        sqlParam.Value = DBNull.Value;
+                    else
+                        sqlParam.Value = value;
+
+                    Params.Add(sqlParam);
                 }
 
                 // and go ... 
@@ -374,10 +375,10 @@ namespace Nox.Libs.Data.Babaj
                 throw new Exception("row already exists");
         }
 
-        public void Update(T r)
+        public void Update(T row)
         {
             // get primary key of row ...
-            var KeyFieldValue = r.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
+            var KeyFieldValue = row.GetPropertyValue<Guid>(_PrimaryKeyPropertyDescriptor.Property);
 
             // test is row exists ... 
             if (Exists(CreateKeySelect, new SqlParameter($"@{DatabasePrimaryKey}", KeyFieldValue)))
@@ -385,15 +386,19 @@ namespace Nox.Libs.Data.Babaj
                 var Fields = new List<string>();
                 var Params = new List<SqlParameter>();
 
-                for (int i = 0; i < _TableDescriptor.Count(); i++)
+                foreach (var md in _TableDescriptor.Where(f => !f.IsPrimaryKey).Select(f => f.MappingDescriptor))
                 {
-                    var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
+                    Fields.Add(md.Name);
+                    
+                    var sqlParam = new SqlParameter($"@{md.Name}", md.CastDescriptor.TargetType);
 
-                    if (!_TableDescriptor[i].IsPrimaryKey)
-                    {
-                        Fields.Add(MappingDescriptor.Name);
-                        Params.Add(new SqlParameter($"@{MappingDescriptor.Name}", r.GetPropertyValue(MappingDescriptor.Property)));
-                    }
+                    var value = row.GetPropertyValue(md.Property);
+                    if (value == null)
+                        sqlParam.Value = DBNull.Value;
+                    else
+                        sqlParam.Value = value;
+
+                    Params.Add(sqlParam);
                 }
 
                 // add parameter used in where-condition ... 
@@ -434,22 +439,16 @@ namespace Nox.Libs.Data.Babaj
                     _PrimaryKeyPropertyDescriptor.Property.SetValue(NewRow, (r.GetValue(r.GetOrdinal(_PrimaryKeyPropertyDescriptor.Name))));
 
                     // add data ... 
-                    for (int i = 0; i < _TableDescriptor.Count; i++)
+                    foreach (var md in _TableDescriptor.Where(f => !f.IsPrimaryKey).Select(f => f.MappingDescriptor))
                     {
-                        var MappingDescriptor = _TableDescriptor[i].MappingDescriptor;
+                        var data = r.GetValue(r.GetOrdinal(md.Name));
 
-                        if (!_TableDescriptor[i].IsPrimaryKey)
-                        {
-                            var data = r.GetValue(r.GetOrdinal(MappingDescriptor.Name));
-
-                            // Test if DBNull, use null instead ...
-                            if (!Convert.IsDBNull(data))
-                                MappingDescriptor.Property.SetValue(NewRow, data);
-                            else
-                                MappingDescriptor.Property.SetValue(NewRow, null);
-                        }
+                        // Test if DBNull, use null instead ...
+                        if (!Convert.IsDBNull(data))
+                            md.Property.SetValue(NewRow, data);
+                        else
+                            md.Property.SetValue(NewRow, null);
                     }
-
                     NewRow.AcceptChanges();
 
                     Result.Add(NewRow);
@@ -503,7 +502,14 @@ namespace Nox.Libs.Data.Babaj
         {
             this.dataTable = dataTable;
 
-            _TableDescriptor = dataTable.tableDescriptor;
+            var data = dataTable.GetType();
+            string Key = $"{data.Namespace}.{data.Name}";
+
+            _TableDescriptor = dataModel.GetTableDescriptor(Key);
+
+            _DatabaseTableSource = _TableDescriptor.TableSource;
+            _DatabasePrimaryKeyField = _TableDescriptor.Where(f => f.IsPrimaryKey).FirstOrDefault()?.Source;
+
             _PrimaryKeyPropertyDescriptor = _TableDescriptor.Where(f => f.IsPrimaryKey).FirstOrDefault();
         }
     }

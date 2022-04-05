@@ -51,11 +51,11 @@ namespace Nox.Libs.Data.Babaj
         #region Properties
         #endregion
 
-        public DataRowColl<T> Get(string Where, params KeyValuePair<string, string>[] Parameters) =>
+        public DataRowColl<T> Get(string Where, params KeyValuePair[] Parameters) =>
             _Operate.Load(Where, Parameters.Select(f => new SqlParameter(f.Key, f.Value)).ToArray());
 
         public T GetWhereId(Guid Id) => Get("id = @id",
-            new KeyValuePair<string, string>("id", Id.ToString())).FirstOrDefault();
+            new KeyValuePair("id", Id.ToString())).FirstOrDefault();
 
         public void Update(T r)
         {

@@ -353,13 +353,16 @@ namespace Nox.Libs.Data.Babaj
                 Params.Add(new SqlParameter($"@{_PrimaryKeyPropertyDescriptor.Source}", KeyFieldValue));
 
                 // add data
-                foreach (var md in _TableDescriptor.Where(f => !f.IsPrimaryKey).Select(f => f.MappingDescriptor))
+                foreach (var pd in _TableDescriptor.Where(f => !f.IsPrimaryKey))
                 {
-                    Fields.Add(md.Name);
+                    var md = pd.MappingDescriptor;
+                    var cd = md.CastDescriptor;
 
-                    var sqlParam = new SqlParameter($"@{md.Name}", md.CastDescriptor.TargetType);
+                    Fields.Add(pd.Source);
 
-                    var value = row.GetPropertyValue(md.Property);
+                    var sqlParam = new SqlParameter($"@{pd.Source}", cd.TargetType);
+
+                    var value = row.GetPropertyValue(pd.Property);
                     if (value == null)
                         sqlParam.Value = DBNull.Value;
                     else
@@ -386,13 +389,16 @@ namespace Nox.Libs.Data.Babaj
                 var Fields = new List<string>();
                 var Params = new List<SqlParameter>();
 
-                foreach (var md in _TableDescriptor.Where(f => !f.IsPrimaryKey).Select(f => f.MappingDescriptor))
+                foreach (var pd in _TableDescriptor.Where(f => !f.IsPrimaryKey))
                 {
-                    Fields.Add(md.Name);
-                    
-                    var sqlParam = new SqlParameter($"@{md.Name}", md.CastDescriptor.TargetType);
+                    var md = pd.MappingDescriptor;
+                    var cd = md.CastDescriptor;
 
-                    var value = row.GetPropertyValue(md.Property);
+                    Fields.Add(pd.Source);
+
+                    var sqlParam = new SqlParameter($"@{pd.Source}", cd.TargetType);
+
+                    var value = row.GetPropertyValue(pd.Property);
                     if (value == null)
                         sqlParam.Value = DBNull.Value;
                     else
